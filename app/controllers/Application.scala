@@ -1,27 +1,18 @@
 package controllers
 
-import play.api.Play.current
-import play.api.mvc._
-import play.api.Logger
+import play.api._
 import play.api.libs.json._
-
-import reactivemongo.api._
-import reactivemongo.bson._
-import reactivemongo.bson.handlers.DefaultBSONHandlers._
-
+import play.api.mvc._
 import play.modules.reactivemongo._
-import play.modules.reactivemongo.PlayBsonImplicits._
+import scala.concurrent.{ExecutionContext, Future}
 
 import hfr._
+import hfr.PageJSON._
 
 object Application extends Controller with MongoController {
 
-  val db = ReactiveMongoPlugin.db
-  lazy val collection = db("test")
-
   def index = Action {
     request =>
-      Logger.info("Index...")
       Ok(views.html.index())
   }
 
@@ -30,23 +21,29 @@ object Application extends Controller with MongoController {
     Ok(TopicRepository.getTopicsAsJson()).as("application/json")
   }
 
-  def topicGifs(topicId: String) = Action {
-    Ok(JsonContentFinder.getContentFromFirstPageAsJson(topicId)).as("application/json")
-  }
-
-  def topicChangePage(topicId: String, pageNumber: Int) = Action {
-    Ok(JsonContentFinder.getContentFromPageNumberAsJson(topicId, pageNumber)).as("application/json")
-  }
-
-  def findAll = Action {
+  def getLastPageFromTopic(topicId: String) = Action {
     Async {
-      val query = QueryBuilder().query(Json.obj(  ))
-      val found = collection.find[JsValue](query).toList
-
-      found.map({ all =>
-        Ok(all.foldLeft(JsArray(List()))( (obj, person) => obj ++ Json.arr(person) ))
-      })
+      val futurePage = PageContentFinder(topicId, None).getContent()
+      futurePage map {
+        case page => {
+          Ok(Json.toJson(page.get)).as("application/json")
+        }
+      }
     }
   }
+
+  def getPageFromTopicAndPageNumber(topicId: String, pageNumber: Int) = Action {
+    val result = PageContentFinder(topicId, Some(pageNumber)).getContent()
+    Async {
+      result match {
+        case futurePage =>
+          futurePage.map {
+            optionPage =>
+              Ok(Json.toJson(optionPage.get)).as("application/json")
+          }
+      }
+    }
+  }
+
 
 }
